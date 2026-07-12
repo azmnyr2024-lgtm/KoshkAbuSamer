@@ -1,5 +1,5 @@
 [app]
-title = Koshk Abu Samer
+title = KoshkAbuSamer
 package.name = koshkabusamernew
 package.domain = org.abu.samer
 source.dir = .
