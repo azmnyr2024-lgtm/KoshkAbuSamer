@@ -1,0 +1,220 @@
+import urllib.parse
+from kivy.app import App
+from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.label import Label
+from kivy.uix.button import Button
+from kivy.uix.scrollview import ScrollView
+from kivy.uix.gridlayout import GridLayout
+from kivy.uix.textinput import TextInput
+from kivy.uix.popup import Popup
+from kivy.utils import platform
+
+if platform == 'android':
+    from jnius import autoclass
+    def open_url(url):
+        Intent = autoclass('android.content.Intent')
+        Uri = autoclass('android.net.Uri')
+        intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+        App.get_running_app().root_window.android_activity.startActivity(intent)
+else:
+    import webbrowser
+    def open_url(url):
+        webbrowser.open(url)
+
+class KoshkAbuSamer(App):
+    def build(self):
+        self.user_name = ""
+        self.user_phone = ""
+        self.special_orders = [] # لحفظ طلبات الرصيد والكهرباء بالتفصيل
+        
+        self.root_layout = BoxLayout(orientation='vertical', padding=10, spacing=10)
+        
+        # --- الهيدر ---
+        header = BoxLayout(orientation='vertical', size_hint_y=None, height=110)
+        header.add_widget(Label(text="🏪 كشك أبو سامر 🏪", font_size='24sp', bold=True, color=(0, 1, 0, 1)))
+        header.add_widget(Label(text="📍 المناقل - الحلة الجديدة - شارع 20", font_size='13sp'))
+        header.add_widget(Label(text="📞 0118680920 | 💬 واتس: 0112342184", font_size='12sp', color=(0.9, 0.9, 0.9, 1)))
+        self.root_layout.add_widget(header)
+        
+        # --- الحسابات الرسمية ---
+        payments = BoxLayout(orientation='vertical', size_hint_y=None, height=90, spacing=2)
+        payments.add_widget(Label(text="💳 حسابات الدفع الإلكتروني:", font_size='13sp', bold=True, color=(1, 0.8, 0, 1)))
+        payments.add_widget(Label(text="• بنكك: 5294141 | • فوري: 51755870", font_size='12sp'))
+        payments.add_widget(Label(text="• لايت كاشي: 300041953", font_size='12sp'))
+        self.root_layout.add_widget(payments)
+        
+        # --- أقسام الخدمات الخاصة (رصيد وكهرباء) ---
+        services_layout = GridLayout(cols=2, size_hint_y=None, height=90, spacing=5)
+        
+        btn_zinc = Button(text="📱 رصيد زين", background_color=(0.1, 0.6, 0.1, 1), bold=True)
+        btn_sudani = Button(text="📱 رصيد سوداني", background_color=(0.1, 0.5, 0.7, 1), bold=True)
+        btn_mtn = Button(text="📱 رصيد MTN", background_color=(0.8, 0.6, 0, 1), bold=True)
+        btn_elect = Button(text="💡 شراء كهرباء", background_color=(0.7, 0.2, 0.2, 1), bold=True)
+        
+        btn_zinc.bind(on_press=lambda x: self.show_service_popup("رصيد زين", "أدخل رقم الهاتف المراد شحنه"))
+        btn_sudani.bind(on_press=lambda x: self.show_service_popup("رصيد سوداني", "أدخل رقم الهاتف المراد شحنه"))
+        btn_mtn.bind(on_press=lambda x: self.show_service_popup("رصيد MTN", "أدخل رقم الهاتف المراد شحنه"))
+        btn_elect.bind(on_press=lambda x: self.show_service_popup("كهرباء", "أدخل رقم العداد (11 رقم)"))
+        
+        services_layout.add_widget(btn_zinc)
+        services_layout.add_widget(btn_sudani)
+        services_layout.add_widget(btn_mtn)
+        services_layout.add_widget(btn_elect)
+        self.root_layout.add_widget(services_layout)
+        
+        # --- قسم إضافة بضاعة جديدة ---
+        add_item_box = BoxLayout(orientation='horizontal', size_hint_y=None, height=45, spacing=5)
+        self.new_item_input = TextInput(hint_text="إضافة بضاعة جديدة للمخزن", multiline=False, halign='right')
+        add_btn = Button(text="➕ إضافة", size_hint_x=0.3, background_color=(0, 0.5, 0.8, 1), bold=True)
+        add_btn.bind(on_press=self.add_new_custom_item)
+        add_item_box.add_widget(self.new_item_input)
+        add_item_box.add_widget(add_btn)
+        self.root_layout.add_widget(add_item_box)
+        
+        self.root_layout.add_widget(Label(text="🛒 قسم المواد الغذائية والحلويات:", font_size='14sp', bold=True))
+        
+        # --- شبكة السلع العادية ---
+        self.scroll_view = ScrollView()
+        self.grid = GridLayout(cols=2, spacing=8, size_hint_y=None)
+        self.grid.bind(minimum_height=self.grid.setter('height'))
+        
+        self.items = [
+            "سجائر", "زيت", "فحم", "سكر", "صلصة", "شوكولاتة",
+            "بن", "جنزبيل", "بصل", "حبهان", "صابون", "معجون", 
+            "فرشة", "بسكويت", "طحينية", "حلاوة شاشي", "مصاصات",
+            "علكة", "شيبس", "اندومي", "كيك ورق"
+        ]
+        
+        self.create_item_buttons()
+        self.scroll_view.add_widget(self.grid)
+        self.root_layout.add_widget(self.scroll_view)
+        
+        self.invoice_label = Label(text="السلع المختارة: فارغ 🛒", font_size='13sp', size_hint_y=None, height=35)
+        self.root_layout.add_widget(self.invoice_label)
+        
+        # --- زر إرسال وتأكيد الطلب ---
+        whatsapp_btn = Button(text="📱 إرسال وتأكيد الطلب الآن", size_hint_y=None, height=50, background_color=(0, 0.6, 0, 1), bold=True)
+        whatsapp_btn.bind(on_press=self.start_order_process)
+        self.root_layout.add_widget(whatsapp_btn)
+        
+        self.cart = []
+        return self.root_layout
+
+    def create_item_buttons(self):
+        self.grid.clear_widgets()
+        for item in self.items:
+            btn = Button(text=item, size_hint_y=None, height=45, background_color=(0.2, 0.2, 0.35, 1))
+            btn.bind(on_press=lambda instance, x=item: self.add_to_cart(x))
+            self.grid.add_widget(btn)
+
+    def add_new_custom_item(self, instance):
+        new_item = self.new_item_input.text.strip()
+        if new_item and new_item not in self.items:
+            self.items.insert(0, new_item)
+            self.create_item_buttons()
+            self.new_item_input.text = ""
+
+    def add_to_cart(self, item_name):
+        self.cart.append(item_name)
+        self.update_invoice_text()
+
+    def show_service_popup(self, service_name, hint_text):
+        # نافذة مخصصة لإدخال رقم العداد أو رقم الهاتف للشحن
+        box = BoxLayout(orientation='vertical', padding=10, spacing=10)
+        box.add_widget(Label(text=f"📋 طلب {service_name}:", bold=True))
+        
+        self.num_input = TextInput(hint_text=hint_text, multiline=False, halign='center', input_filter='int')
+        self.money_input = TextInput(hint_text="أدخل المبلغ بالجنيه", multiline=False, halign='center', input_filter='float')
+        
+        box.add_widget(self.num_input)
+        box.add_widget(self.money_input)
+        
+        add_srv_btn = Button(text="إضافة الفاتورة 🛒", background_color=(0, 0.6, 0, 1), bold=True)
+        box.add_widget(add_srv_btn)
+        
+        self.srv_popup = Popup(title=service_name, content=box, size_hint=(0.9, 0.5))
+        add_srv_btn.bind(on_press=lambda x: self.save_service_order(service_name))
+        self.srv_popup.open()
+
+    def save_service_order(self, service_name):
+        num = self.num_input.text.strip()
+        money = self.money_input.text.strip()
+        if num and money:
+            order_text = f"{service_name} (الرقم/العداد: {num} | المبلغ: {money} جنيه)"
+            self.special_orders.append(order_text)
+            self.update_invoice_text()
+            self.srv_popup.dismiss()
+
+    def update_invoice_text(self):
+        all_items = self.cart + self.special_orders
+        if all_items:
+            self.invoice_label.text = f"السلع المختارة: {', '.join(all_items)}"
+        else:
+            self.invoice_label.text = "السلع المختارة: فارغ 🛒"
+
+    def start_order_process(self, instance):
+        if not self.cart and not self.special_orders:
+            self.invoice_label.text = "⚠️ الرجاء اختيار سلعة أو خدمة أولاً!"
+            return
+            
+        if not self.user_name or not self.user_phone:
+            self.show_user_info_popup()
+        else:
+            self.complete_order()
+
+    def show_user_info_popup(self):
+        box = BoxLayout(orientation='vertical', padding=10, spacing=10)
+        box.add_widget(Label(text="الرجاء إدخال بياناتك لتأكيد الطلب:"))
+        
+        self.name_input = TextInput(hint_text="الاسم الكريم", multiline=False, halign='right')
+        self.phone_input = TextInput(hint_text="رقم هاتف الزبون", multiline=False, halign='right')
+        
+        box.add_widget(self.name_input)
+        box.add_widget(self.phone_input)
+        
+        submit_btn = Button(text="تأكيد وإرسال", background_color=(0, 0.5, 0.8, 1))
+        box.add_widget(submit_btn)
+        
+        self.popup = Popup(title="📝 بيانات الزبون", content=box, size_hint=(0.9, 0.5), auto_dismiss=False)
+        submit_btn.bind(on_press=self.save_user_info)
+        self.popup.open()
+
+    def save_user_info(self, instance):
+        if self.name_input.text.strip() and self.phone_input.text.strip():
+            self.user_name = self.name_input.text.strip()
+            self.user_phone = self.phone_input.text.strip()
+            self.popup.dismiss()
+            self.complete_order()
+
+    def complete_order(self):
+        # 1. رسالة التأكيد الفورية
+        confirm_box = BoxLayout(orientation='vertical', padding=10, spacing=10)
+        confirm_box.add_widget(Label(text="✔️ تم تأكيد طلبك بنجاح!\n\nيرجى الاستلام من الكشك، طلبك جاهز حالياً.", halign='center'))
+        ok_btn = Button(text="موافق", size_hint_y=0.4)
+        confirm_box.add_widget(ok_btn)
+        
+        confirm_popup = Popup(title="📢 حالة الطلب", content=confirm_box, size_hint=(0.8, 0.4))
+        confirm_popup.open()
+        
+        # 2. تجهيز رسالة الواتساب بالتفاصيل المفرزة
+        items_list = ""
+        if self.cart:
+            items_list += f"\n📦 مواد غذائية وحلويات:\n• " + "\n• ".join(self.cart)
+        if self.special_orders:
+            items_list += f"\n\n⚡ خدمات شحن ورصيد:\n• " + "\n• ".join(self.special_orders)
+            
+        message = f"🏪 طلب جديد من تطبيق الكشك:\n👤 اسم الزبون: {self.user_name}\n📞 رقم الهاتف: {self.user_phone}\n{items_list}\n\n(الزبون تلقى رسالة بأن الطلب مؤكد وجاهز للاستلام)."
+        
+        encoded_message = urllib.parse.quote(message)
+        whatsapp_url = f"https://wa.me/249112342184?text={encoded_message}"
+        
+        open_url(whatsapp_url)
+        ok_btn.bind(on_press=confirm_popup.dismiss)
+        
+        # تصفير السلة
+        self.cart = []
+        self.special_orders = []
+        self.invoice_label.text = "السلع المختارة: فارغ 🛒"
+
+if __name__ == '__main__':
+    KoshkAbuSamer().run()
